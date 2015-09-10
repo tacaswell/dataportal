@@ -364,41 +364,24 @@ def make_record(run_start, allow_no_run_stop=False):
     """
     # make sure that our run_start is really a document
     # and get the uid
-    run_start_uid = mc.doc_or_uid_to_uid(run_start)
-    run_start = mc.run_start_given_uid(run_start_uid)
-    _, header = run_start.to_name_dict_pair()
-    # fill in the run_start
-    header['run_start'] = run_start
-    # rename time -> start_time
-    header['start_time'] = header.pop('time')
+    header = mc.get_header(run_start, allow_no_run_stop)
 
-    # see if we have a run_stop, ok if we don't
-    try:
-        run_stop = mc.stop_by_start(run_start_uid)
-        header['run_stop'] = doc.ref_doc_to_uid(run_stop, 'run_start')
-    except mc.NoRunStop:
-        if allow_no_run_stop:
-            header['run_stop'] = None
-        else:
-            raise
+    header.update(header.pop('run_start'))
+    # convert nested refs to run_start to uids
+    header['run_stop'] = doc.ref_doc_to_uid(header['run_stop'], 'run_start')
+    header['descriptors'] = [doc.ref_doc_to_uid(dsc, 'run_start')
+                             for dsc in header['descriptors']]
 
-    try:
-        ev_descs = [doc.ref_doc_to_uid(ev_desc, 'run_start')
-                    for ev_desc in
-                    mc.descriptors_by_start(run_start_uid)]
-
-    except mc.NoEventDescriptors:
-        ev_descs = []
-
-    header['descriptors'] = ev_descs
-    return doc.Document('header', header)
+    return doc.Document('run_record', header)
 
 
 def summarize_header(header):
     special_keys = set(('start_time', 'time', 'stop_time', 'scan_id',
                         'uid', 'descriptors', 'sample', 'exit_status',
                         'exit_reason', 'event_descriptors'))
-    run_start = header['run_start']
+    run_start = dict(header)
+    del run_start['run_stop']
+    del run_start['descriptors']
     s = Stream()
     s.write("<Header ", newline=False)
     s.write("#{0} ".format(header['scan_id']), 'green', newline=False)
@@ -406,17 +389,18 @@ def summarize_header(header):
     s.write(">")
 
     s.write("Sample: {0!r} ".format(run_start['sample']))
-    s.write("Start Time: {0}".format(pretty_print_time(header['start_time'])))
+    s.write("Start Time: {0}".format(pretty_print_time(header['time'])))
     if header['run_stop'] is None:
         st_tm, exit_status, exit_reason = ['Unknown'] * 3
     else:
-        st_tm = pretty_print_time(header['stop_time'])
-        exit_status = header['exit_status']
-        exit_reason = header['exit_reason']
+        st_tm = pretty_print_time(header['run_stop']['time'])
+        exit_status = header['run_stop']['exit_status']
+        exit_reason = header['run_stop']['reason']
 
     s.write("Stop Time: {0}".format(st_tm))
-    if header['stop_time']:
-        dur = humanize.naturaldelta(header['stop_time'] - header['start_time'])
+    if header['run_stop']:
+        dur = humanize.naturaldelta(
+            header['run_stop']['time'] - header['time'])
         s.write('Run Duration : {0}'.format(dur))
     s.write("Exit Status: {0}".format(exit_status))
     s.write("Exit Reason: {0}".format(exit_reason))
@@ -442,7 +426,8 @@ def summarize_header(header):
             s.write("{0}:".format(k))
             for _k, v in sorted(header[k].items()):
                 if _k in 'run_start':
-                    v = repr(v['uid'])
+                    if not isinstance(v, six.string_types):
+                        v = repr(v['uid'])
                 elif _k == 'uid':
                     v = repr(v)
                 elif _k == 'time':
@@ -506,6 +491,6 @@ class Headers(list):
                                           html_header=header._repr_html_(),
                                           repr_uid=repr_uid,
                                           human_time=humanize.naturaldelta(
-                                              ttime.time() - header['start_time']))
+                                              ttime.time() - header['time']))
                            for header in self])
         return prefix + content + suffix
