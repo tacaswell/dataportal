@@ -187,9 +187,6 @@ class _DataBrokerClass(object):
                 descriptor = find_descriptors(run_start=rs, **query)
                 for d in descriptor:
                     descriptors.append(d)
-            # query = {node_name: {'$exists': True},
-            #          'run_start_id': {'$in': [ObjectId(rs.id) for rs in run_start]}}
-            # descriptors = find_descriptors(**query)
             result = []
             known_uids = deque()
             for descriptor in descriptors:
@@ -338,7 +335,7 @@ class Header(doc.Document):
 
     @property
     def summary(self):
-        return summerize_header(self)
+        return summarize_header(self)
 
 
 def make_header(run_start, allow_no_run_stop=False):
@@ -396,7 +393,7 @@ def make_header(run_start, allow_no_run_stop=False):
     return doc.Document('header', header)
 
 
-def summerize_header(header):
+def summarize_header(header):
     special_keys = set(('start_time', 'time', 'stop_time', 'scan_id',
                         'uid', 'descriptors', 'sample', 'exit_status',
                         'exit_reason', 'event_descriptors'))
