@@ -326,7 +326,7 @@ class Header(doc.Document):
         -------
         header : dataportal.broker.Header
         """
-        return make_header(run_start, not verify_integrity)
+        return make_record(run_start, not verify_integrity)
 
     def __repr__(self):
         # Even with a scan_id of 6+ digits, this fits under 80 chars.
@@ -338,46 +338,47 @@ class Header(doc.Document):
         return summarize_header(self)
 
 
-def make_header(run_start, allow_no_run_stop=False):
-    header = dict()
+def make_record(run_start, allow_no_run_stop=False):
+    """Make RunRecord from a RunStart
+
+    RunRecords are RunStarts with the links reversed.  In addition
+    to the RunStart fields, it also has a ''run_stop'` key which
+    contains the RunStop Document and a `'descriptors'` key
+    which contains a list of the associated EventDescriptor
+    Documents.  If no RunStop exists, `'runstop'` will be `None`.
+    The list in `'descriptors'` maybe empty.
+
+    Parameters
+    ----------
+    run_start : dict or str
+        The RunStart to build RunRecord from.  Can be either
+        a Document/dict with a 'uid' key or a uid string
+
+    allow_no_run_stop : bool, optional
+        If True, allow the RunRecord to be constructed without
+        a RunStop.  Defaults to False
+
+    Returns
+    -------
+    record : Document
+    """
     # make sure that our run_start is really a document
     # and get the uid
     run_start_uid = mc.doc_or_uid_to_uid(run_start)
     run_start = mc.run_start_given_uid(run_start_uid)
+    _, header = run_start.to_name_dict_pair()
     # fill in the run_start
     header['run_start'] = run_start
-
-    # fields to copy out of run_start into top-level header
-    run_start_copy = {'start_time': 'time',
-                      'time': 'time',
-                      'scan_id': 'scan_id',
-                      'uid': 'uid',
-                      'sample': 'sample'}
-
-    for h_key, rs_key in run_start_copy.items():
-        header[h_key] = run_start[rs_key]
-
-    # fields to copy to top-level header
-    run_stop_copy = {'stop_time': 'time',
-                     'exit_reason': 'reason',
-                     'exit_status': 'exit_status'}
+    # rename time -> start_time
+    header['start_time'] = header.pop('time')
 
     # see if we have a run_stop, ok if we don't
     try:
         run_stop = mc.stop_by_start(run_start_uid)
-        for h_key, rs_key in run_stop_copy.items():
-            if rs_key == 'reason':
-                header[h_key] = run_stop.get(rs_key, '')
-            else:
-                header[h_key] = run_stop[rs_key]
-
         header['run_stop'] = doc.ref_doc_to_uid(run_stop, 'run_start')
-
     except mc.NoRunStop:
         if allow_no_run_stop:
             header['run_stop'] = None
-            for k in run_stop_copy:
-                header[k] = None
         else:
             raise
 
